@@ -2,8 +2,8 @@ name: PJ Alert Bot
 
 on:
   schedule:
-    - cron: '*/15 * * * *'  # 매 15분마다 실행
-  workflow_dispatch:  # 수동 실행 가능
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
   push:
     branches: [ main, master ]
 
@@ -12,78 +12,45 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    
+
     steps:
     - name: 코드 체크아웃
       uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
-    
+
     - name: Python 설정
       uses: actions/setup-python@v4
       with:
         python-version: '3.11'
-    
+
     - name: 의존성 설치
       run: |
         python -m pip install --upgrade pip
         pip install requests beautifulsoup4 cloudscraper
-    
+
     - name: 상품 모니터링 실행
       id: monitor
       run: python pj_monitor.py
       env:
         TG_TOKEN: ${{ secrets.TG_TOKEN }}
         TG_CHAT: ${{ secrets.TG_CHAT }}
-    
-    - name: 텔레그램 알림 발송
+
+    - name: 텔레그램 알림 발송 (신상품/재입고 감지 시에만)
+      if: ${{ exists('alert.txt') }}
       run: |
-        CURRENT_TIME=$(date '+%Y-%m-%d %H:%M:%S')
-        
-        if [ -f "alert.txt" ]; then
-          echo "🔥 변화 감지 - 상세 알림 발송"
-          ALERT_MESSAGE=$(cat alert.txt)
-          
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage" \
-            -F chat_id="${{ secrets.TG_CHAT }}" \
-            -F text="$ALERT_MESSAGE" \
-            -F parse_mode="Markdown" \
-            -F disable_web_page_preview=true
-        else
-          echo "📊 상태 리포트 발송"
-          
-          # 상태 메시지를 파일로 작성
-          cat > status_message.txt << 'EOF'
-        ✅ PJ Bot 상태 리포트
-        
-        📊 모니터링 완료
-        • 상태: 정상 동작 중
-        • 변화: 없음 (모든 상품 품절 상태 유지)
-        
-        🔍 현재 감시 중
-        • Pointless Journey 전체 상품
-        • 신상품 출시 감지
-        • 재입고 알림 대기
-        
-        ⏰ 다음 체크: 15분 후
-        EOF
-          
-          # 시간 정보 추가
-          sed -i "s/• 상태: 정상 동작 중/• 시간: ${CURRENT_TIME}\\n• 상태: 정상 동작 중/" status_message.txt
-          
-          # 텔레그램 발송
-          STATUS_MESSAGE=$(cat status_message.txt)
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage" \
-            -F chat_id="${{ secrets.TG_CHAT }}" \
-            -F text="$STATUS_MESSAGE" \
-            -F disable_web_page_preview=true
-        fi
-    
+        ALERT_MESSAGE=$(cat alert.txt)
+        curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage" \
+          -F chat_id="${{ secrets.TG_CHAT }}" \
+          -F text="$ALERT_MESSAGE" \
+          -F parse_mode="Markdown" \
+          -F disable_web_page_preview=true
+
     - name: Git 설정
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-    
+
     - name: 캐시 파일 커밋
       run: |
         if [ -f "cache.json" ]; then
@@ -96,7 +63,7 @@ jobs:
           fi
         fi
       continue-on-error: true
-    
+
     - name: 실행 결과 로그
       run: |
         echo "=== 모니터링 완료 ==="
