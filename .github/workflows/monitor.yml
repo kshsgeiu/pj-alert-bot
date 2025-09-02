@@ -2,21 +2,14 @@ name: PJ Alert Bot
 
 on:
   schedule:
-    # 매 15분마다 실행 (GitHub Actions 무료 티어에서 안정적)
-    - cron: '*/15 * * * *'
-  
-  # 수동 실행 가능
-  workflow_dispatch:
-  
-  # 푸시할 때도 테스트 실행
+    - cron: '*/15 * * * *'  # 매 15분마다 실행
+  workflow_dispatch:  # 수동 실행 가능
   push:
     branches: [ main, master ]
 
 jobs:
   monitor:
     runs-on: ubuntu-latest
-    
-    # GitHub Actions에 쓰기 권한 부여
     permissions:
       contents: write
     
@@ -24,7 +17,6 @@ jobs:
     - name: 코드 체크아웃
       uses: actions/checkout@v4
       with:
-        # 캐시 파일 커밋을 위해 토큰 사용
         token: ${{ secrets.GITHUB_TOKEN }}
     
     - name: Python 설정
@@ -44,14 +36,13 @@ jobs:
         TG_TOKEN: ${{ secrets.TG_TOKEN }}
         TG_CHAT: ${{ secrets.TG_CHAT }}
     
-    - name: 텔레그램 상태 알림 (매번 실행)
+    - name: 텔레그램 알림 발송
       run: |
         CURRENT_TIME=$(date '+%Y-%m-%d %H:%M:%S')
         
         if [ -f "alert.txt" ]; then
-          # 변화가 있는 경우
+          echo "🔥 변화 감지 - 상세 알림 발송"
           ALERT_MESSAGE=$(cat alert.txt)
-          echo "🔥 변화 감지 알림 발송"
           
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage" \
             -F chat_id="${{ secrets.TG_CHAT }}" \
@@ -59,25 +50,33 @@ jobs:
             -F parse_mode="Markdown" \
             -F disable_web_page_preview=true
         else
-          # 변화가 없어도 상태 리포트 발송
           echo "📊 상태 리포트 발송"
           
+          # 상태 메시지를 파일로 작성
+          cat > status_message.txt << 'EOF'
+        ✅ PJ Bot 상태 리포트
+        
+        📊 모니터링 완료
+        • 상태: 정상 동작 중
+        • 변화: 없음 (모든 상품 품절 상태 유지)
+        
+        🔍 현재 감시 중
+        • Pointless Journey 전체 상품
+        • 신상품 출시 감지
+        • 재입고 알림 대기
+        
+        ⏰ 다음 체크: 15분 후
+        EOF
+          
+          # 시간 정보 추가
+          sed -i "s/• 상태: 정상 동작 중/• 시간: ${CURRENT_TIME}\\n• 상태: 정상 동작 중/" status_message.txt
+          
+          # 텔레그램 발송
+          STATUS_MESSAGE=$(cat status_message.txt)
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage" \
-            -d chat_id="${{ secrets.TG_CHAT }}" \
-            -d "text=✅ PJ Bot 상태 리포트
-
-📊 모니터링 완료
-• 시간: ${CURRENT_TIME}
-• 상태: 정상 동작 중
-• 변화: 없음 (모든 상품 품절 상태 유지)
-
-🔍 현재 감시 중
-• Pointless Journey 전체 상품  
-• 신상품 출시 감지
-• 재입고 알림 대기
-
-⏰ 다음 체크: 15분 후" \
-            -d disable_web_page_preview=true
+            -F chat_id="${{ secrets.TG_CHAT }}" \
+            -F text="$STATUS_MESSAGE" \
+            -F disable_web_page_preview=true
         fi
     
     - name: Git 설정
@@ -102,7 +101,6 @@ jobs:
       run: |
         echo "=== 모니터링 완료 ==="
         echo "시간: $(date)"
-        echo "상태: ${{ steps.monitor.outputs.has_changes }}"
         if [ -f "cache.json" ]; then
           echo "캐시 크기: $(wc -l < cache.json) 줄"
         fi
