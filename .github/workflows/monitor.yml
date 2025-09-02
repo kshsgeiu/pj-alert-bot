@@ -44,18 +44,44 @@ jobs:
         TG_TOKEN: ${{ secrets.TG_TOKEN }}
         TG_CHAT: ${{ secrets.TG_CHAT }}
     
-    - name: 변화 감지시 텔레그램 알림 (백업)
-      if: steps.monitor.outputs.has_changes == 'true'
+    - name: 텔레그램 상태 알림 (매번 실행)
       run: |
+        # 현재 시간
+        CURRENT_TIME=$(date '+%Y-%m-%d %H:%M:%S')
+        
+        # 변화가 있는 경우
         if [ -f "alert.txt" ]; then
           ALERT_MESSAGE=$(cat alert.txt)
-          echo "알림 메시지:"
+          echo "🔥 변화 감지 알림:"
           echo "$ALERT_MESSAGE"
           
-          # 텔레그램 직접 발송 (백업용)
           curl -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage" \
             -F chat_id="${{ secrets.TG_CHAT }}" \
             -F text="$ALERT_MESSAGE" \
+            -F parse_mode="Markdown" \
+            -F disable_web_page_preview=true
+        else
+          # 변화가 없어도 상태 리포트 발송
+          STATUS_MESSAGE="✅ PJ Bot 상태 리포트
+          
+📊 모니터링 완료
+• 시간: $CURRENT_TIME  
+• 상태: 정상 동작 중
+• 변화: 없음 (모든 상품 품절 상태 유지)
+
+🔍 현재 감시 중
+• Pointless Journey 전체 상품
+• 신상품 출시 감지  
+• 재입고 알림 대기
+
+⏰ 다음 체크: 15분 후"
+
+          echo "📊 상태 리포트 발송:"
+          echo "$STATUS_MESSAGE"
+          
+          curl -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage" \
+            -F chat_id="${{ secrets.TG_CHAT }}" \
+            -F text="$STATUS_MESSAGE" \
             -F parse_mode="Markdown" \
             -F disable_web_page_preview=true
         fi
