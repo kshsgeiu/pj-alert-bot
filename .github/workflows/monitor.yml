@@ -37,7 +37,7 @@ jobs:
         TG_CHAT: ${{ secrets.TG_CHAT }}
 
     - name: 텔레그램 알림 발송 (신상품/재입고 감지 시에만)
-      if: ${{ exists('alert.txt') }}
+      if: ${{ hashFiles('alert.txt') != '' }}
       run: |
         ALERT_MESSAGE=$(cat alert.txt)
         curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage" \
