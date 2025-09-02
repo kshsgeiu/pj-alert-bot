@@ -31,14 +31,39 @@ TG_CHAT = os.getenv("TG_CHAT")
 def load_cache():
     """이전 상품 정보 로드"""
     if Path(CACHE_FILE).exists():
-        with open(CACHE_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        try:
+            with open(CACHE_FILE, 'r', encoding='utf-8') as f:
+                content = f.read().strip()
+                if not content:
+                    print("캐시 파일이 비어있음 - 새로 시작")
+                    return {}
+                return json.loads(content)
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            print(f"캐시 파일 손상 감지: {e}")
+            print("새로운 캐시 파일로 시작")
+            # 손상된 캐시 파일 백업
+            backup_file = f"{CACHE_FILE}.backup"
+            Path(CACHE_FILE).rename(backup_file)
+            print(f"손상된 파일을 {backup_file}로 백업")
+            return {}
     return {}
 
 def save_cache(data):
     """상품 정보 저장"""
-    with open(CACHE_FILE, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    try:
+        # 임시 파일에 먼저 저장
+        temp_file = f"{CACHE_FILE}.tmp"
+        with open(temp_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        
+        # 성공적으로 저장되면 원본 파일로 이동
+        Path(temp_file).rename(CACHE_FILE)
+        print(f"캐시 저장 완료: {len(data)}개 상품")
+    except Exception as e:
+        print(f"캐시 저장 실패: {e}")
+        # 임시 파일이 있다면 정리
+        if Path(f"{CACHE_FILE}.tmp").exists():
+            Path(f"{CACHE_FILE}.tmp").unlink()
 
 def scrape_products():
     """Pointless Journey 상품 정보 수집"""
@@ -178,51 +203,66 @@ def main():
     """메인 실행 함수"""
     print(f"[{datetime.now()}] Pointless Journey 모니터링 시작...")
     
-    # 현재 상품 정보 수집
-    current_products = scrape_products()
-    if not current_products:
-        print("상품 정보를 가져올 수 없습니다.")
-        return
-    
-    # 이전 캐시 로드
-    cached_products = load_cache()
-    
-    # 변화 감지
-    new_products, restocked_products = check_changes(current_products, cached_products)
-    
-    # 알림 메시지 생성
-    alert_message = create_alert_message(new_products, restocked_products)
-    
-    if alert_message:
-        print("변화 감지! 알림 발송...")
-        print(alert_message)
+    try:
+        # 현재 상품 정보 수집
+        current_products = scrape_products()
+        if not current_products:
+            print("상품 정보를 가져올 수 없습니다.")
+            return
         
-        # 알림 파일 생성 (GitHub Actions에서 사용)
-        with open(ALERT_FILE, 'w', encoding='utf-8') as f:
-            f.write(alert_message)
+        # 이전 캐시 로드
+        cached_products = load_cache()
         
-        # 텔레그램 발송
-        send_telegram_message(alert_message)
+        # 변화 감지
+        new_products, restocked_products = check_changes(current_products, cached_products)
         
-        # 환경변수로 GitHub Actions에 알림
-        with open(os.environ.get('GITHUB_OUTPUT', '/dev/null'), 'a') as f:
-            f.write('has_changes=true\n')
-    else:
-        print("변화 없음")
-        # 알림 파일 삭제
-        if Path(ALERT_FILE).exists():
-            Path(ALERT_FILE).unlink()
+        # 알림 메시지 생성
+        alert_message = create_alert_message(new_products, restocked_products)
         
+        if alert_message:
+            print("변화 감지! 알림 발송...")
+            print(alert_message)
+            
+            # 알림 파일 생성 (GitHub Actions에서 사용)
+            with open(ALERT_FILE, 'w', encoding='utf-8') as f:
+                f.write(alert_message)
+            
+            # 텔레그램 발송
+            send_telegram_message(alert_message)
+            
+            # 환경변수로 GitHub Actions에 알림
+            with open(os.environ.get('GITHUB_OUTPUT', '/dev/null'), 'a') as f:
+                f.write('has_changes=true\n')
+        else:
+            print("변화 없음")
+            # 알림 파일 삭제
+            if Path(ALERT_FILE).exists():
+                Path(ALERT_FILE).unlink()
+            
+            with open(os.environ.get('GITHUB_OUTPUT', '/dev/null'), 'a') as f:
+                f.write('has_changes=false\n')
+        
+        # 캐시 업데이트
+        updated_cache = {}
+        for product in current_products:
+            updated_cache[product['id']] = product
+        
+        save_cache(updated_cache)
+        
+    except Exception as e:
+        print(f"예상치 못한 오류 발생: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # 오류 시에도 빈 캐시라도 저장
+        try:
+            save_cache({})
+        except:
+            pass
+        
+        # GitHub Actions에 실패 상태 알림
         with open(os.environ.get('GITHUB_OUTPUT', '/dev/null'), 'a') as f:
             f.write('has_changes=false\n')
-    
-    # 캐시 업데이트
-    updated_cache = {}
-    for product in current_products:
-        updated_cache[product['id']] = product
-    
-    save_cache(updated_cache)
-    print(f"캐시 업데이트 완료: {len(updated_cache)}개 상품")
 
 if __name__ == "__main__":
     main()
