@@ -16,6 +16,10 @@ jobs:
   monitor:
     runs-on: ubuntu-latest
     
+    # GitHub Actions에 쓰기 권한 부여
+    permissions:
+      contents: write
+    
     steps:
     - name: 코드 체크아웃
       uses: actions/checkout@v4
