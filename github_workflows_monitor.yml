@@ -2,7 +2,7 @@ name: PJ Alert Bot
 
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '*/9 * * * *'
   workflow_dispatch:
   push:
     branches: [ main, master ]
